@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AC CHIP-8 — Browser Emulator</title>
+<style>
+:root{color-scheme:dark;--bg:#090e17;--panel:#141e2d;--panel2:#1b2a3e;--line:#30435e;--ink:#edf5ff;--muted:#9aacc4;--accent:#f2a34a;--cyan:#75d7e8}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#182941 0,#090e17 60%);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+main{max-width:1050px;margin:0 auto;padding:28px 18px 42px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px}.logo{width:44px;height:44px;border-radius:13px;background:var(--accent);color:#17120b;display:grid;place-items:center;font-weight:900;font-size:20px}
+h1{font-size:22px;margin:0;letter-spacing:.02em}header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.pill{border:1px solid var(--line);border-radius:999px;padding:6px 11px;color:var(--cyan);font-size:12px}
+.layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr);gap:18px}
+.panel{background:linear-gradient(180deg,#172337,#111a28);border:1px solid var(--line);border-radius:17px;padding:17px;box-shadow:0 16px 40px #0004}
+.screen-wrap{background:#030806;border:1px solid #38513c;border-radius:12px;padding:12px;position:relative}
+canvas{display:block;width:100%;height:auto;image-rendering:pixelated;aspect-ratio:64/32;background:#07130d;border-radius:5px}
+.status{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px;margin-top:10px;flex-wrap:wrap}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+button,.file-label,select{border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:9px;padding:9px 12px;font:inherit;font-size:13px;cursor:pointer}
+button.primary{background:var(--accent);color:#1b140b;border-color:var(--accent);font-weight:750}
+button:hover,.file-label:hover{filter:brightness(1.12)}button:disabled{opacity:.45;cursor:not-allowed}
+input[type=file]{display:none}label.file-label{display:inline-flex;align-items:center}
+h2{font-size:15px;margin:0 0 12px}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:9px 0;color:var(--muted);font-size:13px}
+.row strong{color:var(--ink);font-weight:600}select{max-width:150px;padding:7px}
+hr{border:0;border-top:1px solid var(--line);margin:15px 0}
+.keypad{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.key{aspect-ratio:1.4;background:#1c2b3f;border:1px solid #3a506c;border-radius:9px;display:grid;place-items:center;color:#dce9fa;font-weight:700;font-size:17px;user-select:none;touch-action:none}
+.key small{display:block;color:var(--muted);font-size:10px;font-weight:400}
+.key.active{background:#80501f;border-color:var(--accent);color:white}
+.note{font-size:12px;color:var(--muted);margin:12px 0 0}
+#message{color:var(--cyan);min-height:20px;font-size:12px;margin-top:9px}
+@media(max-width:760px){.layout{grid-template-columns:1fr}main{padding:18px 12px}.panel{padding:13px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+ <div class="brand"><div class="logo">8</div><div><h1>AC CHIP-8</h1><p>Single-file browser emulator · 64×32 monochrome display</p></div></div>
+ <span class="pill">AC Kondo Software · CHIP-8</span>
+</header>
+<div class="layout">
+<section class="panel">
+ <div class="screen-wrap"><canvas id="screen" width="640" height="320" aria-label="CHIP-8 display"></canvas></div>
+ <div class="status"><span id="runState">Ready — load a ROM</span><span>PC: <b id="pc">0x200</b> · Cycles: <b id="cycles">0</b></span></div>
+ <div class="controls">
+  <label class="file-label" for="rom">Load ROM</label><input id="rom" type="file" accept=".ch8,.c8,.rom,.bin,application/octet-stream">
+  <button id="start" class="primary" disabled>Run</button><button id="pause" disabled>Pause</button><button id="step" disabled>Step</button><button id="reset" disabled>Reset</button>
+ </div>
+ <div id="message">Choose a CHIP-8 ROM to begin. No ROMs are bundled.</div>
+ <p class="note">Keyboard: 1 2 3 4 / Q W E R / A S D F / Z X C V map to the CHIP-8 keypad.</p>
+</section>
+<aside class="panel">
+ <h2>Machine status</h2>
+ <div class="row"><span>Loaded ROM</span><strong id="romName">None</strong></div>
+ <div class="row"><span>ROM size</span><strong id="romSize">—</strong></div>
+ <div class="row"><span>Delay timer</span><strong id="delay">0</strong></div>
+ <div class="row"><span>Sound timer</span><strong id="sound">0</strong></div>
+ <div class="row"><span>Instructions / second</span><strong id="ips">—</strong></div>
+ <div class="row"><span>CPU speed</span><select id="speed"><option value="300">300 Hz</option><option value="500" selected>500 Hz</option><option value="700">700 Hz</option><option value="1000">1000 Hz</option></select></div>
+ <div class="row"><span>Shift behavior</span><select id="shift"><option value="vx">Use Vx</option><option value="vy">Use Vy</option></select></div>
+ <div class="row"><span>Logic ops clear VF</span><select id="logic"><option value="yes">Yes</option><option value="no">No</option></select></div>
+ <hr>
+ <h2>CHIP-8 keypad</h2>
+ <div class="keypad" id="keypad">
+  <div class="key" data-key="1">1<small>1</small></div><div class="key" data-key="2">2<small>2</small></div><div class="key" data-key="3">3<small>3</small></div><div class="key" data-key="C">C<small>4</small></div>
+  <div class="key" data-key="4">4<small>Q</small></div><div class="key" data-key="5">5<small>W</small></div><div class="key" data-key="6">6<small>E</small></div><div class="key" data-key="D">D<small>R</small></div>
+  <div class="key" data-key="7">7<small>A</small></div><div class="key" data-key="8">8<small>S</small></div><div class="key" data-key="9">9<small>D</small></div><div class="key" data-key="E">E<small>F</small></div>
+  <div class="key" data-key="A">A<small>Z</small></div><div class="key" data-key="0">0<small>X</small></div><div class="key" data-key="B">B<small>C</small></div><div class="key" data-key="F">F<small>V</small></div>
+ </div>
+ <p class="note">Touch or click the keypad on mobile. Sound timer is emulated as a timer; audio tone is not generated.</p>
+</aside>
+</div>
+</main>
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const canvas = $("screen"), ctx = canvas.getContext("2d");
+const W=64,H=32,START=0x200,MEM=4096;
+const FONT=[
+0xF0,0x90,0x90,0x90,0xF0,0x20,0x60,0x20,0x20,0x70,
+0xF0,0x10,0xF0,0x80,0xF0,0xF0,0x10,0xF0,0x10,0xF0,
+0x90,0x90,0xF0,0x10,0x10,0xF0,0x80,0xF0,0x10,0xF0,
+0xF0,0x80,0xF0,0x90,0xF0,0xF0,0x80,0xF0,0x90,0x90,
+0xE0,0x90,0xE0,0x90,0xE0,0xF0,0x80,0x80,0x80,0xF0,
+0xF0,0x90,0xF0,0x90,0xF0,0xF0,0x90,0xF0,0x90,0x90,
+0xE0,0x90,0xE0,0x90,0xE0,0xF0,0x10,0x20,0x40,0x40
+];
+const keyMap={"1":0x1,"2":0x2,"3":0x3,"4":0xC,"q":0x4,"w":0x5,"e":0x6,"r":0xD,"a":0x7,"s":0x8,"d":0x9,"f":0xE,"z":0xA,"x":0x0,"c":0xB,"v":0xF};
+let mem, V, I, pc, stack, sp, delay, sound, display, keys, waiting, loaded, running=false, timer=null, lastTimer=0, cycles=0, ipsWindow=0, ipsCount=0, lastIps=performance.now(), frameRequest=null;
+
+function fresh(){
+ mem=new Uint8Array(MEM); mem.set(FONT,0x50);
+ V=new Uint8Array(16); I=0; pc=START; stack=new Uint16Array(16); sp=0;
+ delay=0;sound=0;display=new Uint8Array(W*H);keys=new Uint8Array(16);
+ waiting=null;cycles=0;ipsCount=0;lastIps=performance.now();draw();update();
+}
+function draw(){
+ ctx.fillStyle="#07130d";ctx.fillRect(0,0,canvas.width,canvas.height);
+ ctx.fillStyle="#a7f58b";
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(display[y*W+x])ctx.fillRect(x*10,y*10,10,10);
+}
+function update(){
+ $("pc").textContent="0x"+pc.toString(16).padStart(3,"0").toUpperCase();
+ $("cycles").textContent=cycles.toLocaleString();
+ $("delay").textContent=delay;$("sound").textContent=sound;
+ $("runState").textContent=running?"Running":loaded?"Paused":"Ready — load a ROM";
+ $("ips").textContent=ipsWindow?Math.round(ipsWindow).toLocaleString():"—";
+ $("start").disabled=!loaded||running;$("pause").disabled=!running;
+ $("step").disabled=!loaded||running;$("reset").disabled=!loaded;
+}
+function stop(){running=false;if(timer){clearInterval(timer);timer=null;}update();}
+function fail(msg){stop();$("message").textContent=msg;}
+function randomByte(){return Math.floor(Math.random()*256);}
+function fetchByte(a){return mem[a&0xFFF];}
+function cycle(){
+ if(waiting!==null){
+   const k=keys.findIndex(v=>v); if(k<0)return;
+   V[waiting]=k;waiting=null;return;
+ }
+ if(pc<0x200||pc+1>=MEM){throw Error("Program counter out of range: 0x"+pc.toString(16));}
+ const op=(fetchByte(pc)<<8)|fetchByte(pc+1);pc=(pc+2)&0xFFF;cycles++;ipsCount++;
+ const x=(op>>8)&0xF,y=(op>>4)&0xF,n=op&0xF,kk=op&0xFF,nnn=op&0xFFF;
+ switch(op&0xF000){
+ case 0x0000:
+  if(op===0x00E0){display.fill(0);draw();}
+  else if(op===0x00EE){if(sp===0)throw Error("Stack underflow");pc=stack[--sp];}
+  else if(op!==0x0000)throw Error("Unsupported instruction 0x"+op.toString(16));
+  break;
+ case 0x1000:pc=nnn;break;
+ case 0x2000:if(sp>=16)throw Error("Stack overflow");stack[sp++]=pc;pc=nnn;break;
+ case 0x3000:if(V[x]===kk)pc=(pc+2)&0xFFF;break;
+ case 0x4000:if(V[x]!==kk)pc=(pc+2)&0xFFF;break;
+ case 0x5000:if(n===0&&V[x]===V[y])pc=(pc+2)&0xFFF;else if(n!==0)throw Error("Invalid 5xyN opcode");break;
+ case 0x6000:V[x]=kk;break;
+ case 0x7000:V[x]=(V[x]+kk)&0xFF;break;
+ case 0x8000:{
+  const a=V[x],b=V[y];
+  switch(n){
+   case 0x0:V[x]=b;break;case 0x1:V[x]=a|b;if($("logic").value==="yes")V[0xF]=0;break;
+   case 0x2:V[x]=a&b;if($("logic").value==="yes")V[0xF]=0;break;
+   case 0x3:V[x]=a^b;if($("logic").value==="yes")V[0xF]=0;break;
+   case 0x4:{const sum=a+b;V[0xF]=sum>255?1:0;V[x]=sum&255;break;}
+   case 0x5:V[0xF]=a>=b?1:0;V[x]=(a-b)&255;break;
+   case 0x6:{const val=$("shift").value==="vy"?b:a;V[0xF]=val&1;V[x]=val>>>1;break;}
+   case 0x7:V[0xF]=b>=a?1:0;V[x]=(b-a)&255;break;
+   case 0xE:{const val=$("shift").value==="vy"?b:a;V[0xF]=(val>>7)&1;V[x]=(val<<1)&255;break;}
+   default:throw Error("Invalid 8xyN opcode");
+  }break;
+ }
+ case 0x9000:if(n===0&&V[x]!==V[y])pc=(pc+2)&0xFFF;else if(n!==0)throw Error("Invalid 9xyN opcode");break;
+ case 0xA000:I=nnn;break;
+ case 0xB000:pc=(nnn+V[0])&0xFFF;break;
+ case 0xC000:V[x]=randomByte()&kk;break;
+ case 0xD000:{
+  const height=n===0?16:n;V[0xF]=0;
+  for(let row=0;row<height;row++){
+   const sprite=fetchByte(I+row);
+   for(let col=0;col<8;col++)if(sprite&(0x80>>col)){
+    const px=(V[x]+col)%W,py=(V[y]+row)%H,idx=py*W+px;
+    if(display[idx])V[0xF]=1;
+    display[idx]^=1;
+   }
+  }draw();break;
+ }
+ case 0xE000:
+  if(kk===0x9E){if(keys[V[x]&0xF])pc=(pc+2)&0xFFF;}
+  else if(kk===0xA1){if(!keys[V[x]&0xF])pc=(pc+2)&0xFFF;}
+  else throw Error("Invalid ExNN opcode");
+  break;
+ case 0xF000:
+  switch(kk){
+   case 0x07:V[x]=delay;break;
+   case 0x0A:waiting=x;break;
+   case 0x15:delay=V[x];break;
+   case 0x18:sound=V[x];break;
+   case 0x1E:I=(I+V[x])&0xFFFF;break;
+   case 0x29:I=0x50+(V[x]&0xF)*5;break;
+   case 0x33:{const v=V[x];mem[I]=Math.floor(v/100);mem[I+1]=Math.floor((v%100)/10);mem[I+2]=v%10;break;}
+   case 0x55:for(let r=0;r<=x;r++)mem[I+r]=V[r];break;
+   case 0x65:for(let r=0;r<=x;r++)V[r]=fetchByte(I+r);break;
+   default:throw Error("Unsupported FxNN opcode 0x"+kk.toString(16));
+  }break;
+ default:throw Error("Unknown opcode 0x"+op.toString(16));
+ }
+}
+function tick(){
+ try{
+  const hz=Number($("speed").value),batch=Math.max(1,Math.round(hz/60));
+  for(let i=0;i<batch&&running;i++)cycle();
+  const now=performance.now();
+  if(now-lastTimer>=1000/60){if(delay>0)delay--;if(sound>0)sound--;lastTimer=now;}
+  if(now-lastIps>=1000){ipsWindow=ipsCount/(now-lastIps)*1000;ipsCount=0;lastIps=now;}
+  update();
+ }catch(e){fail("Emulation stopped: "+e.message);}
+}
+function start(){if(!loaded)return;running=true;lastTimer=performance.now();timer=setInterval(tick,1000/60);update();}
+function loadRom(file){
+ if(!file)return;
+ const reader=new FileReader();
+ reader.onload=()=>{
+  const data=new Uint8Array(reader.result);
+  if(data.length===0||data.length>MEM-START){$("message").textContent="Invalid ROM size (must be 1–3584 bytes).";return;}
+  fresh();mem.set(data,START);loaded=true;
+  $("romName").textContent=file.name;$("romSize").textContent=data.length+" bytes";
+  $("message").textContent="Loaded "+file.name+". Press Run to start.";
+  update();
+ };
+ reader.onerror=()=>{$("message").textContent="Could not read ROM.";};
+ reader.readAsArrayBuffer(file);
+}
+$("rom").addEventListener("change",e=>loadRom(e.target.files[0]));
+$("start").addEventListener("click",start);
+$("pause").addEventListener("click",stop);
+$("step").addEventListener("click",()=>{try{cycle();draw();update();}catch(e){fail(e.message);}});
+$("reset").addEventListener("click",()=>{if(!loaded)return;const fileName=$("romName").textContent;const input=$("rom");fresh();loaded=false;$("message").textContent="Reset machine. Load the ROM again to restart."; $("romName").textContent="None";$("romSize").textContent="—";update();});
+window.addEventListener("keydown",e=>{
+ const k=keyMap[e.key.toLowerCase()];if(k===undefined)return;e.preventDefault();keys[k]=1;
+ const el=document.querySelector('[data-key="'+k.toString(16).toUpperCase()+'"]');if(el)el.classList.add("active");
+});
+window.addEventListener("keyup",e=>{
+ const k=keyMap[e.key.toLowerCase()];if(k===undefined)return;keys[k]=0;
+ const el=document.querySelector('[data-key="'+k.toString(16).toUpperCase()+'"]');if(el)el.classList.remove("active");
+});
+document.querySelectorAll(".key").forEach(el=>{
+ const k=parseInt(el.dataset.key,16);
+ const down=e=>{e.preventDefault();keys[k]=1;el.classList.add("active");};
+ const up=e=>{e.preventDefault();keys[k]=0;el.classList.remove("active");};
+ el.addEventListener("pointerdown",down);el.addEventListener("pointerup",up);
+ el.addEventListener("pointercancel",up);el.addEventListener("pointerleave",e=>{if(e.buttons)up(e);});
+});
+fresh();
+})();
+</script>
+</body>
+</html>
